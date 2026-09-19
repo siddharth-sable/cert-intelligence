@@ -1,0 +1,59 @@
+sequenceDiagram
+    autonumber
+    actor CT as Google CT Log
+    participant Main as 1. Ingest (main.go)
+    participant KV as NATS KV Store
+    participant NATS as NATS JetStream
+    participant Det as 2. Detector (detector.go)
+    participant Probe as 3. Prober (prober.go)
+    participant Store as 4. Storage (storage.go)
+    participant Redis as Redis Cache
+    participant PG as PostgreSQL
+    participant Notif as 5. Notifier (notifier.go)
+    participant WH as Webhooks / SIEM
+
+    %% Ingestion
+    Main->>KV: Get last_index
+    KV-->>Main: Return saved index
+    Main->>CT: Fetch certificate batch
+    CT-->>Main: Return X.509 certificates
+    Main->>NATS: Publish to `certs.ingested`
+    Main->>KV: Update last_index
+
+    %% Detection
+    NATS->>Det: Deliver `certs.ingested`
+    Note over Det: Compute Shannon Entropy<br/>& Brand Levenshtein Match
+    alt Risk Score >= 40
+        Det->>NATS: Publish to `certs.flagged`
+    else Low Risk
+        Note over Det: Drop Event
+    end
+
+    %% Network Probing
+    NATS->>Probe: Deliver `certs.flagged`
+    Note over Probe: Active Reconnaissance:<br/>1. DNS Lookup (A, MX, NS)<br/>2. JARM TLS Handshakes
+    Probe->>NATS: Publish to `certs.enriched`
+
+    %% Fanout Consumer 1: Storage
+    par Persistence Pipeline
+        NATS->>Store: Deliver `certs.enriched` (storage-group)
+        Store->>Redis: SetNX seen_domain:<domain> (TTL 24h)
+        alt Key New (Unique)
+            Redis-->>Store: Success (True)
+            Store->>PG: UPSERT into flagged_domains
+        else Already Seen
+            Redis-->>Store: Key Exists (False)
+            Note over Store: Skip DB write
+        end
+        Store->>NATS: ACK Message
+    
+    %% Fanout Consumer 2: Alerting
+    and Notification Pipeline
+        NATS->>Notif: Deliver `certs.enriched` (notifier-group)
+        Notif->>WH: Export stdout JSON (SIEM format)
+        alt Risk Score >= 60
+            Notif->>WH: Send Webhook Alert Card
+        end
+        Notif->>NATS: ACK Message
+    end
+    

@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  nats:
+    image: nats:2.10-alpine
+    container_name: cert_intel_nats
+    command: ["-js", "-sd", "/data"]
+    ports:
+      - "4222:4222"   # NATS client port
+      - "8222:8222"   # HTTP monitoring port
+    volumes:
+      - nats_data:/data
+
+volumes:
+  nats_data:

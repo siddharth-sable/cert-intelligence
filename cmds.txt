@@ -1,0 +1,21 @@
+# Terminal 1: Ingestion
+go run main.go types.go
+
+# Terminal 2: Detection
+go run detector.go analyzer.go types.go
+
+# Terminal 3: Active Network Reconnaissance
+go run prober.go analyzer.go types.go
+
+# Terminal 4: Database Storage & Deduplication
+go run storage.go prober.go analyzer.go types.go
+
+# Terminal 5: Alerting & SIEM Log Export
+go run notifier.go prober.go analyzer.go types.go
+
+
+export ALERT_WEBHOOK_URL="https://discord.com/api/webhooks/YOUR/WEBHOOK/URL"
+
+
+docker run --rm -it --network host natsio/nats-box nats pub "certs.ingested" '{"common_name":"paypal-security-login-update-auth.com","sans":["paypal-security-login-update-auth.com"],"timestamp":"2026-09-19T15:00:00Z"}'
+

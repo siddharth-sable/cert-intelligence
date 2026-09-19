@@ -1,0 +1,40 @@
+flowchart TD
+    subgraph External ["External Sources & Sinks"]
+        CT["Google CT Log API<br/>(/ct/v1/get-entries)"]
+        WH["Chat Webhooks<br/>(Slack / Discord)"]
+        SIEM["SIEM Forwarder<br/>(Filebeat / Logstash)"]
+    end
+
+    subgraph Platform ["CertIntel Microservice Platform"]
+        Ingest["1. Ingestion Engine<br/>(main.go)"]
+        Detector["2. Detection Engine<br/>(detector.go & analyzer.go)"]
+        Prober["3. Active Network Prober<br/>(prober.go)"]
+        Storage["4. Persistence Service<br/>(storage.go)"]
+        Notifier["5. Alerting & SIEM Service<br/>(notifier.go)"]
+    end
+
+    subgraph Infrastructure ["Storage & Messaging"]
+        NATS[("NATS JetStream")]
+        KV[("NATS KV Store<br/>INGEST_STATE")]
+        Redis[("Redis<br/>24h Deduplication")]
+        PG[("PostgreSQL<br/>threat_intel DB")]
+    end
+
+    %% Flow connections
+    CT -->|HTTP Pull| Ingest
+    Ingest <-->|Read / Write Index| KV
+    Ingest -->|"Pub: certs.ingested"| NATS
+    
+    NATS -->|"Sub: certs.ingested"| Detector
+    Detector -->|"Pub: certs.flagged (Risk Score >= 40)"| NATS
+    
+    NATS -->|"Sub: certs.flagged"| Prober
+    Prober -->|"Pub: certs.enriched"| NATS
+    
+    NATS -->|"Sub: certs.enriched (storage-group)"| Storage
+    Storage <-->|Check / Set TTL| Redis
+    Storage -->|UPSERT| PG
+
+    NATS -->|"Sub: certs.enriched (notifier-group)"| Notifier
+    Notifier -->|JSON Logs| SIEM
+    Notifier -->|"HTTP POST (Risk Score >= 60)"| WH

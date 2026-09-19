@@ -1,0 +1,11 @@
+flowchart LR
+    A["X.509 Cert"] --> B{"Risk Score >= 40?"}
+    B -- No --> C["Drop Event"]
+    B -- Yes --> D["Run Active Recon\n(DNS + JARM)"]
+    D --> E{"Domain Seen in 24h?"}
+    E -- Yes --> F["Skip DB Write"]
+    E -- No --> G["Store in PostgreSQL"]
+    D --> H{"Risk Score >= 60?"}
+    H -- Yes --> I["Trigger Webhook Alert"]
+    H -- No --> J["Log to SIEM Only"]
+    
